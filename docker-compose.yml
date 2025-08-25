@@ -1,0 +1,274 @@
+services:
+  # Elasticsearch
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    networks:
+      - soc-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Logstash
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.11.0
+    container_name: logstash
+    volumes:
+      - ./logstash/config/logstash.yml:/usr/share/logstash/config/logstash.yml:ro
+      - ./logstash/pipeline:/usr/share/logstash/pipeline:ro
+    ports:
+      - "5044:5044"
+      - "9600:9600"
+    environment:
+      LS_JAVA_OPTS: "-Xmx256m -Xms256m"
+    networks:
+      - soc-network
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9600 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Kibana
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.11.0
+    container_name: kibana
+    ports:
+      - "5601:5601"
+    environment:
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      ELASTICSEARCH_HOSTS: '["http://elasticsearch:9200"]'
+    networks:
+      - soc-network
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # n8n
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=admin123
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=UTC
+    volumes:
+      - n8n_data:/home/node/.n8n
+    networks:
+      - soc-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5678/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # The Hive - Database
+  thehive-db:
+    image: cassandra:4.1
+    container_name: thehive-db
+    environment:
+      - CASSANDRA_CLUSTER_NAME=TheHive
+      - CASSANDRA_DC=DC1
+      - CASSANDRA_RACK=RAC1
+    volumes:
+      - thehive_db_data:/var/lib/cassandra
+    networks:
+      - soc-network
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'SHOW VERSION' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # The Hive
+  thehive:
+    image: thehiveproject/thehive4:latest
+    container_name: thehive
+    ports:
+      - "9002:9000"
+    environment:
+      - CASSANDRA_HOSTS=thehive-db
+      - CASSANDRA_CLUSTER_NAME=TheHive
+      - CASSANDRA_DC=DC1
+      - CASSANDRA_RACK=RAC1
+      - CASSANDRA_KEYSPACE=thehive
+      - CASSANDRA_USERNAME=
+      - CASSANDRA_PASSWORD=
+      - CASSANDRA_REPLICATION_FACTOR=1
+      - CASSANDRA_READ_CONSISTENCY_LEVEL=ONE
+      - CASSANDRA_WRITE_CONSISTENCY_LEVEL=ONE
+      - THEHIVE_SECRET=secret
+      - THEHIVE_ES_HOST=elasticsearch
+      - THEHIVE_ES_PORT=9200
+      - THEHIVE_ES_PROTOCOL=http
+      - THEHIVE_ES_INDEX=the_hive_16
+    volumes:
+      - thehive_data:/opt/thp/thehive/data
+    networks:
+      - soc-network
+    depends_on:
+      thehive-db:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Cortex
+  cortex:
+    image: thehiveproject/cortex:latest
+    container_name: cortex
+    ports:
+      - "9001:9001"
+    environment:
+      - CASSANDRA_HOSTS=thehive-db
+      - CASSANDRA_CLUSTER_NAME=TheHive
+      - CASSANDRA_DC=DC1
+      - CASSANDRA_RACK=RAC1
+      - CASSANDRA_KEYSPACE=cortex
+      - CASSANDRA_USERNAME=
+      - CASSANDRA_PASSWORD=
+      - CASSANDRA_REPLICATION_FACTOR=1
+      - CASSANDRA_READ_CONSISTENCY_LEVEL=ONE
+      - CASSANDRA_WRITE_CONSISTENCY_LEVEL=ONE
+      - CORTEX_SECRET=secret
+      - CORTEX_ES_HOST=elasticsearch
+      - CORTEX_ES_PORT=9200
+      - CORTEX_ES_PROTOCOL=http
+      - CORTEX_ES_INDEX=cortex_16
+    volumes:
+      - cortex_data:/opt/cortex/data
+    networks:
+      - soc-network
+    depends_on:
+      thehive-db:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9001/api/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Webhook Service for IP Blocking
+  webhook:
+    image: python:3.9-slim
+    container_name: webhook
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./webhook:/app/webhook
+      - ./nginx:/app/nginx
+      - ./:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: /app/webhook
+    environment:
+      - WEBHOOK_SECRET=s0me-s3cr3t-k3y
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+    command: >
+      sh -c "apt-get update && apt-get install -y docker.io &&
+             pip install -r requirements.txt &&
+             python app.py"
+    networks:
+      - soc-network
+    depends_on:
+      logstash:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8081/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Nginx Reverse Proxy with IP Blocking
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/logs:/var/log/nginx
+    networks:
+      - soc-network
+    depends_on:
+      vulnerable-webapp:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Vulnerable Web Application for Brute Force Testing
+  vulnerable-webapp:
+    image: python:3.9-slim
+    container_name: vulnerable-webapp
+    expose:
+      - "8080"
+    volumes:
+      - ./vulnerable-webapp:/app
+    working_dir: /app
+    environment:
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+    command: >
+      sh -c "pip install flask requests &&
+             python app.py"
+    networks:
+      - soc-network
+    depends_on:
+      logstash:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  elasticsearch_data:
+  n8n_data:
+  thehive_db_data:
+  thehive_data:
+  cortex_data:
+
+networks:
+  soc-network:
+    driver: bridge 

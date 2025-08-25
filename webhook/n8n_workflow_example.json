@@ -1,0 +1,465 @@
+{
+  "name": "SIEM Auto-Block Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "SIEM Alert Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "siem-alert"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "severity-check",
+              "leftValue": "={{ $json.severity }}",
+              "rightValue": "high",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "alert-type-check",
+              "leftValue": "={{ $json.alert_type }}",
+              "rightValue": "brute_force_attack",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filter-high-severity",
+      "name": "Filter High Severity Brute Force",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "http://webhook:8081/webhook/auto-block",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer your-secret-key-here"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "ip_address",
+              "value": "={{ $json.ip_address }}"
+            },
+            {
+              "name": "alert_type",
+              "value": "={{ $json.alert_type }}"
+            },
+            {
+              "name": "severity",
+              "value": "={{ $json.severity }}"
+            },
+            {
+              "name": "attempt_count",
+              "value": "={{ $json.attempt_count }}"
+            },
+            {
+              "name": "details",
+              "value": "={{ $json.details }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "auto-block-webhook",
+      "name": "Auto-Block IP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "http://webhook:8081/webhook/ip-block",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer your-secret-key-here"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "action",
+              "value": "block"
+            },
+            {
+              "name": "ip_address",
+              "value": "={{ $json.ip_address }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "manual-block-webhook",
+      "name": "Manual Block IP",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "success-check",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-block-success",
+      "name": "Check Block Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "success-check",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-manual-success",
+      "name": "Check Manual Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "http://webhook:8081/webhook/ip-block",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer your-secret-key-here"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "action",
+              "value": "list"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "list-blocked-ips",
+      "name": "List Blocked IPs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "url": "http://webhook:8081/webhook/ip-block",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer your-secret-key-here"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "action",
+              "value": "list"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "list-blocked-ips-manual",
+      "name": "List Blocked IPs (Manual)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 400]
+    },
+    {
+      "parameters": {
+        "message": "✅ IP {{ $json.ip_address }} has been automatically blocked due to high severity brute force attack.\n\n📊 Blocked IPs: {{ $('List Blocked IPs').item.json.output }}\n\n🔗 Alert Details: {{ $json.details }}",
+        "additionalFields": {
+          "chatId": "your-chat-id-here"
+        }
+      },
+      "id": "success-notification",
+      "name": "Success Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "message": "✅ IP {{ $json.ip_address }} has been manually blocked.\n\n📊 Blocked IPs: {{ $('List Blocked IPs (Manual)').item.json.output }}",
+        "additionalFields": {
+          "chatId": "your-chat-id-here"
+        }
+      },
+      "id": "manual-success-notification",
+      "name": "Manual Success Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "message": "❌ Failed to block IP {{ $json.ip_address }} automatically.\n\nError: {{ $json.error }}\n\n🔗 Alert Details: {{ $json.details }}",
+        "additionalFields": {
+          "chatId": "your-chat-id-here"
+        }
+      },
+      "id": "failure-notification",
+      "name": "Failure Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1340, 100]
+    },
+    {
+      "parameters": {
+        "message": "❌ Failed to block IP {{ $json.ip_address }} manually.\n\nError: {{ $json.error }}",
+        "additionalFields": {
+          "chatId": "your-chat-id-here"
+        }
+      },
+      "id": "manual-failure-notification",
+      "name": "Manual Failure Notification",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1340, 500]
+    }
+  ],
+  "connections": {
+    "SIEM Alert Webhook": {
+      "main": [
+        [
+          {
+            "node": "Filter High Severity Brute Force",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter High Severity Brute Force": {
+      "main": [
+        [
+          {
+            "node": "Auto-Block IP",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Manual Block IP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto-Block IP": {
+      "main": [
+        [
+          {
+            "node": "Check Block Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Block IP": {
+      "main": [
+        [
+          {
+            "node": "Check Manual Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Block Success": {
+      "main": [
+        [
+          {
+            "node": "List Blocked IPs",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Failure Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Manual Success": {
+      "main": [
+        [
+          {
+            "node": "List Blocked IPs (Manual)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Manual Failure Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Blocked IPs": {
+      "main": [
+        [
+          {
+            "node": "Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List Blocked IPs (Manual)": {
+      "main": [
+        [
+          {
+            "node": "Manual Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "siem-auto-block-workflow",
+  "tags": [
+    {
+      "createdAt": "2025-08-06T14:00:00.000Z",
+      "updatedAt": "2025-08-06T14:00:00.000Z",
+      "id": "security",
+      "name": "Security"
+    },
+    {
+      "createdAt": "2025-08-06T14:00:00.000Z",
+      "updatedAt": "2025-08-06T14:00:00.000Z",
+      "id": "automation",
+      "name": "Automation"
+    }
+  ]
+} 
